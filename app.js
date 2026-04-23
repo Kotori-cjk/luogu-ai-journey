@@ -73,6 +73,7 @@ function migrateState(parsed) {
                     description: problem.description || "",
                     code: problem.code || "",
                     wrongBook: Boolean(problem.wrongBook),
+                    collapsed: Boolean(problem.collapsed),
                     analysisRecords: Array.isArray(problem.analysisRecords)
                         ? problem.analysisRecords.map((record, recordIndex) => ({
                             id: record.id || `analysis-${problemIndex}-${recordIndex}`,
@@ -316,8 +317,37 @@ function renderPlanTab() {
                 <button id="delete-category-btn" class="btn btn-danger" type="button">删除当前分类</button>
             </div>
         </div>
+        ${renderProblemCatalog(currentCategory)}
         ${formCard}
         ${problemCards}
+    `;
+}
+
+function renderProblemCatalog(category) {
+    if (!category.problems.length) {
+        return "";
+    }
+
+    return `
+        <nav class="problem-catalog" aria-label="题目目录">
+            <div class="problem-catalog-head">
+                <div>
+                    <h3>题目目录</h3>
+                    <p>当前分类共 ${category.problems.length} 道题，新添加的题目会自动出现在这里。</p>
+                </div>
+                <span class="problem-catalog-count">${category.problems.length} 题</span>
+            </div>
+            <div class="problem-catalog-list">
+                ${category.problems.map((problem, index) => `
+                    <button class="problem-catalog-item" data-catalog-problem="${problem.id}" type="button">
+                        <span class="catalog-index">${index + 1}</span>
+                        <span class="catalog-title">${escapeHtml(problem.title)}</span>
+                        ${problem.analysisRecords.length ? '<span class="catalog-mark catalog-mark-ai">AI</span>' : ""}
+                        ${problem.wrongBook ? '<span class="catalog-mark catalog-mark-wrong">错题</span>' : ""}
+                    </button>
+                `).join("")}
+            </div>
+        </nav>
     `;
 }
 
@@ -328,7 +358,7 @@ function renderProblemCard(problem, category) {
         : "还没有分析记录";
 
     return `
-        <article class="problem-card ${problem.wrongBook ? "is-wrong" : ""}" data-problem-id="${problem.id}">
+        <article class="problem-card ${problem.wrongBook ? "is-wrong" : ""} ${problem.collapsed ? "is-collapsed" : ""}" data-problem-id="${problem.id}" id="problem-${problem.id}">
             <div class="problem-top">
                 <div class="problem-info">
                     <div class="problem-title-row">
@@ -341,11 +371,13 @@ function renderProblemCard(problem, category) {
                     ${problem.description ? `<div class="problem-desc">${escapeHtml(problem.description)}</div>` : ""}
                 </div>
                 <div class="problem-tools">
+                    <button class="btn btn-ghost btn-sm" data-toggle-problem-fold="${problem.id}" type="button">${problem.collapsed ? "展开" : "折叠"}</button>
                     <button class="btn btn-secondary btn-sm" data-edit-problem="${problem.id}" type="button">编辑</button>
                     <button class="btn btn-danger btn-sm" data-delete-problem="${problem.id}" type="button">删除</button>
                 </div>
             </div>
 
+            <div class="problem-fold-body">
             <div class="problem-code-wrap">
                 <label class="field-caption" for="code-${problem.id}">代码输入区</label>
                 <textarea id="code-${problem.id}" class="problem-code" data-problem-code="${problem.id}" placeholder="把你的 C++ / Python / Java 代码粘贴到这里，随后点击 AI 诊断。">${escapeHtml(problem.code || "")}</textarea>
@@ -384,6 +416,7 @@ function renderProblemCard(problem, category) {
                 ${problem.analysisRecords.length
                     ? problem.analysisRecords.map((record, index) => renderAnalysisRecord(problem.id, record, index)).join("")
                     : '<div class="analysis-empty">点击上面的“AI 诊断”后，分析记录会保存在这里，并且支持折叠查看。</div>'}
+            </div>
             </div>
         </article>
     `;
@@ -605,7 +638,8 @@ function addProblemToCurrentCategory(title, link, description) {
         link: link.trim(),
         description: description.trim(),
         code: "",
-                wrongBook: false,
+        wrongBook: false,
+        collapsed: false,
         analysisRecords: [],
         chatRecords: []
     });
@@ -630,6 +664,14 @@ function deleteProblem(problemId) {
     if (!confirmed) return;
 
     match.category.problems = match.category.problems.filter((item) => item.id !== problemId);
+    saveState();
+    renderAll();
+}
+
+function toggleProblemFold(problemId) {
+    const problem = findProblem(problemId)?.problem;
+    if (!problem) return;
+    problem.collapsed = !problem.collapsed;
     saveState();
     renderAll();
 }
@@ -1139,6 +1181,31 @@ function setupEvents() {
 
         if (target.closest("#delete-category-btn")) {
             deleteCurrentCategory();
+            return;
+        }
+
+        const catalogButton = target.closest("[data-catalog-problem]");
+        if (catalogButton) {
+            const match = findProblem(catalogButton.dataset.catalogProblem);
+            if (match && match.problem.collapsed) {
+                match.problem.collapsed = false;
+                saveState();
+                renderPlanTab();
+                syncTabState();
+            }
+            const article = document.querySelector(`[data-problem-id="${catalogButton.dataset.catalogProblem}"]`);
+            if (article) {
+                article.scrollIntoView({ behavior: "smooth", block: "start" });
+                article.classList.remove("problem-highlight");
+                void article.offsetWidth;
+                article.classList.add("problem-highlight");
+            }
+            return;
+        }
+
+        const foldButton = target.closest("[data-toggle-problem-fold]");
+        if (foldButton) {
+            toggleProblemFold(foldButton.dataset.toggleProblemFold);
             return;
         }
 
