@@ -36,7 +36,13 @@ let uiState = {
 };
 
 function saveState() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        return true;
+    } catch (error) {
+        console.warn("Failed to save state:", error);
+        return false;
+    }
 }
 
 function loadState() {
@@ -139,6 +145,35 @@ function escapeHtml(value) {
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
+}
+
+function compressBackgroundImage(file, maxSize = 1600, quality = 0.78) {
+    return new Promise((resolve, reject) => {
+        if (!file || !file.type.startsWith("image/")) {
+            reject(new Error("请选择图片文件。"));
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("图片读取失败。"));
+        reader.onload = (event) => {
+            const image = new Image();
+            image.onerror = () => reject(new Error("图片解析失败。"));
+            image.onload = () => {
+                const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+                const width = Math.max(1, Math.round(image.width * scale));
+                const height = Math.max(1, Math.round(image.height * scale));
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(image, 0, 0, width, height);
+                resolve(canvas.toDataURL("image/jpeg", quality));
+            };
+            image.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
 }
 
 function getCurrentCategory() {
@@ -1354,19 +1389,28 @@ function setupEvents() {
     document.getElementById("bg-upload-btn").addEventListener("click", () => {
         document.getElementById("bg-upload").click();
     });
-    document.getElementById("bg-upload").addEventListener("change", (event) => {
-        Array.from(event.target.files || []).forEach((file) => {
-            const reader = new FileReader();
-            reader.onload = (loadEvent) => {
-                state.settings.backgrounds.push(loadEvent.target.result);
+    document.getElementById("bg-upload").addEventListener("change", async (event) => {
+        const files = Array.from(event.target.files || []);
+        for (const file of files) {
+            try {
+                const dataUrl = await compressBackgroundImage(file);
+                state.settings.backgrounds.push(dataUrl);
                 if (state.settings.currentBg < 0) {
                     state.settings.currentBg = 0;
                 }
-                saveState();
+                if (!saveState()) {
+                    state.settings.backgrounds.pop();
+                    if (!state.settings.backgrounds.length) {
+                        state.settings.currentBg = -1;
+                    }
+                    alert("图片保存失败：浏览器本地存储空间不足。请换一张更小的图片，或先删除旧背景。");
+                    break;
+                }
                 renderAll();
-            };
-            reader.readAsDataURL(file);
-        });
+            } catch (error) {
+                alert(`图片上传失败：${error.message}`);
+            }
+        }
         event.target.value = "";
     });
     document.getElementById("bg-preview-list").addEventListener("click", (event) => {
