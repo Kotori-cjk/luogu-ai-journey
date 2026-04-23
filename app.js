@@ -1,4 +1,6 @@
 const STORAGE_KEY = "kotori-luogu-ai-v1";
+const BG_DB_NAME = "kotori-luogu-ai-backgrounds";
+const BG_DB_STORE = "images";
 const PARTICLES = ["✨", "🌸", "💭", "⭐", "🍬", "🫧", "🎀", "🩷"];
 
 function createDefaultCategories() {
@@ -34,6 +36,8 @@ let uiState = {
     loadingProblemId: null,
     loadingChatProblemId: null
 };
+let bgDb = null;
+let backgroundImageCache = {};
 
 function saveState() {
     try {
@@ -53,6 +57,90 @@ function loadState() {
         state = migrateState(parsed);
     } catch (error) {
         console.warn("Failed to load state:", error);
+    }
+}
+
+function openBackgroundDb() {
+    return new Promise((resolve, reject) => {
+        if (!("indexedDB" in window)) {
+            reject(new Error("IndexedDB is not available."));
+            return;
+        }
+        const request = indexedDB.open(BG_DB_NAME, 1);
+        request.onupgradeneeded = (event) => {
+            event.target.result.createObjectStore(BG_DB_STORE);
+        };
+        request.onsuccess = (event) => {
+            bgDb = event.target.result;
+            resolve(bgDb);
+        };
+        request.onerror = () => reject(request.error);
+    });
+}
+
+function bgDbPut(key, value) {
+    return new Promise((resolve, reject) => {
+        const tx = bgDb.transaction(BG_DB_STORE, "readwrite");
+        tx.objectStore(BG_DB_STORE).put(value, key);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+function bgDbDelete(key) {
+    return new Promise((resolve, reject) => {
+        const tx = bgDb.transaction(BG_DB_STORE, "readwrite");
+        tx.objectStore(BG_DB_STORE).delete(key);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+function bgDbGetAll() {
+    return new Promise((resolve, reject) => {
+        const tx = bgDb.transaction(BG_DB_STORE, "readonly");
+        const request = tx.objectStore(BG_DB_STORE).openCursor();
+        const result = {};
+        request.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (!cursor) {
+                resolve(result);
+                return;
+            }
+            result[cursor.key] = cursor.value;
+            cursor.continue();
+        };
+        request.onerror = () => reject(request.error);
+    });
+}
+
+function isDataUrl(value) {
+    return typeof value === "string" && value.startsWith("data:image/");
+}
+
+function resolveBackgroundSrc(value) {
+    if (isDataUrl(value)) return value;
+    return backgroundImageCache[value] || "";
+}
+
+async function migrateBackgroundsToIndexedDb() {
+    if (!bgDb) return;
+    let changed = false;
+    const migrated = [];
+    for (const item of state.settings.backgrounds || []) {
+        if (isDataUrl(item)) {
+            const key = `bg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            await bgDbPut(key, item);
+            backgroundImageCache[key] = item;
+            migrated.push(key);
+            changed = true;
+        } else {
+            migrated.push(item);
+        }
+    }
+    if (changed) {
+        state.settings.backgrounds = migrated;
+        saveState();
     }
 }
 
@@ -197,8 +285,9 @@ function initParticles() {
 function applyBackground() {
     const layer = document.getElementById("bg-layer");
     const { backgrounds, currentBg } = state.settings;
-    if (Array.isArray(backgrounds) && backgrounds[currentBg]) {
-        layer.style.backgroundImage = `url("${backgrounds[currentBg]}")`;
+    const src = Array.isArray(backgrounds) ? resolveBackgroundSrc(backgrounds[currentBg]) : "";
+    if (src) {
+        layer.style.backgroundImage = `url("${src}")`;
         layer.classList.add("has-bg");
     } else {
         layer.style.backgroundImage = "";
@@ -257,9 +346,9 @@ function renderBgPreviews() {
         return;
     }
 
-    list.innerHTML = backgrounds.map((src, index) => `
+    list.innerHTML = backgrounds.map((item, index) => `
         <div class="bg-preview-item ${state.settings.currentBg === index ? "active" : ""}" data-bg-select="${index}">
-            <img src="${src}" alt="背景 ${index + 1}">
+            <img src="${resolveBackgroundSrc(item)}" alt="背景 ${index + 1}">
             <button class="bg-preview-delete" data-bg-del="${index}" type="button">×</button>
         </div>
     `).join("");
@@ -1394,12 +1483,22 @@ function setupEvents() {
         for (const file of files) {
             try {
                 const dataUrl = await compressBackgroundImage(file);
-                state.settings.backgrounds.push(dataUrl);
+                let storedValue = dataUrl;
+                if (bgDb) {
+                    storedValue = `bg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                    await bgDbPut(storedValue, dataUrl);
+                    backgroundImageCache[storedValue] = dataUrl;
+                }
+                state.settings.backgrounds.push(storedValue);
                 if (state.settings.currentBg < 0) {
                     state.settings.currentBg = 0;
                 }
                 if (!saveState()) {
-                    state.settings.backgrounds.pop();
+                    const removed = state.settings.backgrounds.pop();
+                    if (bgDb && removed && !isDataUrl(removed)) {
+                        delete backgroundImageCache[removed];
+                        await bgDbDelete(removed).catch(() => {});
+                    }
                     if (!state.settings.backgrounds.length) {
                         state.settings.currentBg = -1;
                     }
@@ -1417,7 +1516,11 @@ function setupEvents() {
         const deleteButton = event.target.closest("[data-bg-del]");
         if (deleteButton) {
             const index = Number(deleteButton.dataset.bgDel);
-            state.settings.backgrounds.splice(index, 1);
+            const [removed] = state.settings.backgrounds.splice(index, 1);
+            if (bgDb && removed && !isDataUrl(removed)) {
+                delete backgroundImageCache[removed];
+                bgDbDelete(removed).catch((error) => console.warn("Failed to delete background image:", error));
+            }
             if (state.settings.currentBg >= state.settings.backgrounds.length) {
                 state.settings.currentBg = state.settings.backgrounds.length - 1;
             }
@@ -1436,7 +1539,8 @@ function setupEvents() {
     document.getElementById("bg-reset-btn").addEventListener("click", () => {
         state.settings.currentBg = -1;
         saveState();
-        renderAll();
+        applyBackground();
+        renderBgPreviews();
     });
 
     document.getElementById("music-add-btn").addEventListener("click", () => {
@@ -1470,7 +1574,7 @@ function setupEvents() {
     });
 
     document.getElementById("bg-view-btn").addEventListener("click", () => {
-        if (state.settings.currentBg < 0 || !state.settings.backgrounds[state.settings.currentBg]) {
+        if (state.settings.currentBg < 0 || !resolveBackgroundSrc(state.settings.backgrounds[state.settings.currentBg])) {
             alert("请先在设置里上传背景图片。");
             return;
         }
@@ -1490,8 +1594,15 @@ function setupEvents() {
     });
 }
 
-function init() {
+async function init() {
     loadState();
+    try {
+        await openBackgroundDb();
+        backgroundImageCache = await bgDbGetAll();
+        await migrateBackgroundsToIndexedDb();
+    } catch (error) {
+        console.warn("Background image database is unavailable:", error);
+    }
     initParticles();
     setupEvents();
     renderAll();
