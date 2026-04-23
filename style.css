@@ -449,7 +449,9 @@ a {
 #main-content {
     flex: 1;
     padding: 24px 32px;
-    max-width: 1200px;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
 }
 
 .tabs {
@@ -834,7 +836,7 @@ a {
 }
 
 .accordion-item {
-    overflow: hidden;
+    overflow: visible;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: #fff;
@@ -882,6 +884,8 @@ a {
     display: none;
     padding: 0 16px 16px;
     border-top: 1px dashed var(--border);
+    min-width: 0;
+    overflow: visible;
 }
 
 .accordion-item.open .accordion-body {
@@ -893,6 +897,10 @@ a {
     margin-top: 12px;
     line-height: 1.8;
     font-size: 14px;
+    width: 100%;
+    min-width: 0;
+    overflow: visible;
+    word-break: break-word;
 }
 
 .analysis-content h1,
@@ -915,11 +923,26 @@ a {
 
 .analysis-content pre,
 .method-content pre {
+    width: 100%;
+    max-width: 100%;
+    max-height: none;
     overflow-x: auto;
+    overflow-y: visible;
     margin: 10px 0;
     padding: 12px;
     border-radius: var(--radius-xs);
     background: #f5f2fb;
+    white-space: pre;
+}
+
+.analysis-content pre code,
+.method-content pre code {
+    display: block;
+    width: max-content;
+    min-width: 100%;
+    padding: 0;
+    background: transparent;
+    white-space: pre;
 }
 
 .analysis-content code,
@@ -927,6 +950,15 @@ a {
     padding: 2px 5px;
     border-radius: 5px;
     background: #f5f2fb;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.analysis-content p,
+.analysis-content li,
+.method-content p,
+.method-content li {
+    overflow-wrap: anywhere;
 }
 
 .analysis-content ul,
