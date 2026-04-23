@@ -427,6 +427,7 @@ a {
 .settings-group select:focus,
 .settings-group textarea:focus,
 .problem-code:focus,
+.ai-question-input:focus,
 .method-inputs textarea:focus,
 .method-inputs input:focus {
     outline: none;
@@ -712,6 +713,11 @@ a {
     color: var(--secondary);
 }
 
+.badge-chat {
+    background: #e9fbff;
+    color: #16859a;
+}
+
 .badge-wrong {
     background: #fff0f0;
     color: var(--danger);
@@ -728,6 +734,14 @@ a {
     margin-top: 12px;
 }
 
+.ai-question-box {
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(233, 251, 255, 0.72));
+}
+
 .field-caption {
     display: block;
     margin-bottom: 6px;
@@ -736,6 +750,7 @@ a {
 }
 
 .problem-code,
+.ai-question-input,
 .method-inputs textarea {
     width: 100%;
     min-height: 180px;
@@ -748,6 +763,42 @@ a {
     font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
     font-size: 13px;
     line-height: 1.6;
+}
+
+.ai-question-input {
+    min-height: 92px;
+    font-family: var(--font-body);
+}
+
+.ai-question-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.chat-history {
+    margin-top: 14px;
+}
+
+.chat-question {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: var(--radius-xs);
+    background: var(--bg);
+    line-height: 1.7;
+}
+
+.chat-question strong {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--primary-dark);
+}
+
+.chat-question p {
+    white-space: pre-wrap;
 }
 
 .problem-action-row {

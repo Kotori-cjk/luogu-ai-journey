@@ -31,7 +31,8 @@ let state = structuredClone(defaultState);
 let uiState = {
     categoryFormVisible: false,
     problemFormVisible: false,
-    loadingProblemId: null
+    loadingProblemId: null,
+    loadingChatProblemId: null
 };
 
 function saveState() {
@@ -78,6 +79,16 @@ function migrateState(parsed) {
                             createdAt: record.createdAt || formatNow(),
                             model: record.model || merged.settings.aiModel || "unknown-model",
                             content: record.content || "",
+                            expanded: Boolean(record.expanded)
+                        }))
+                        : [],
+                    chatRecords: Array.isArray(problem.chatRecords)
+                        ? problem.chatRecords.map((record, recordIndex) => ({
+                            id: record.id || `chat-${problemIndex}-${recordIndex}`,
+                            createdAt: record.createdAt || formatNow(),
+                            model: record.model || merged.settings.aiModel || "unknown-model",
+                            question: record.question || "",
+                            answer: record.answer || "",
                             expanded: Boolean(record.expanded)
                         }))
                         : []
@@ -324,6 +335,7 @@ function renderProblemCard(problem, category) {
                         <span class="problem-title">${escapeHtml(problem.title)}</span>
                         ${problem.link ? `<a class="problem-link" href="${escapeHtml(problem.link)}" target="_blank" rel="noreferrer">打开题目</a>` : ""}
                         <span class="badge badge-ai">${problem.analysisRecords.length} 条分析</span>
+                        <span class="badge badge-chat">${(problem.chatRecords || []).length} 条问答</span>
                         ${problem.wrongBook ? '<span class="badge badge-wrong">已加入错题本</span>' : ""}
                     </div>
                     ${problem.description ? `<div class="problem-desc">${escapeHtml(problem.description)}</div>` : ""}
@@ -349,6 +361,23 @@ function renderProblemCard(problem, category) {
                         ${problem.wrongBook ? "移出错题本" : "加入错题本"}
                     </button>
                 </div>
+            </div>
+
+            <div class="ai-question-box">
+                <label class="field-caption" for="question-${problem.id}">直接向 AI 提问</label>
+                <textarea id="question-${problem.id}" class="ai-question-input" data-ai-question="${problem.id}" placeholder="例如：为什么这里要用二分？我的第 35 行边界有没有问题？请只给提示不要直接给完整代码。"></textarea>
+                <div class="ai-question-actions">
+                    <span class="problem-meta">会自动带上当前题目、描述和代码作为上下文。</span>
+                    <button class="btn btn-primary ${uiState.loadingChatProblemId === problem.id ? "is-loading" : ""}" data-ask-problem="${problem.id}" type="button">
+                        ${uiState.loadingChatProblemId === problem.id ? "回答中..." : "向 AI 提问"}
+                    </button>
+                </div>
+            </div>
+
+            <div class="chat-history accordion-list">
+                ${(problem.chatRecords || []).length
+                    ? problem.chatRecords.map((record, index) => renderChatRecord(problem.id, record, index)).join("")
+                    : '<div class="analysis-empty">你向 AI 的每次提问都会保存在这里，并且每条对话都可以折叠。</div>'}
             </div>
 
             <div class="accordion-list">
@@ -576,8 +605,9 @@ function addProblemToCurrentCategory(title, link, description) {
         link: link.trim(),
         description: description.trim(),
         code: "",
-        wrongBook: false,
-        analysisRecords: []
+                wrongBook: false,
+        analysisRecords: [],
+        chatRecords: []
     });
 
     saveState();
@@ -645,6 +675,46 @@ function deleteAnalysis(problemId, recordId) {
     renderAll();
 }
 
+function renderChatRecord(problemId, record, index) {
+    return `
+        <div class="accordion-item ${record.expanded ? "open" : ""}" id="chat-${record.id}">
+            <button class="accordion-header" data-toggle-chat="${problemId}:${record.id}" type="button">
+                <div class="accordion-title">
+                    <strong>第 ${index + 1} 次提问：${escapeHtml(record.question.slice(0, 32))}${record.question.length > 32 ? "..." : ""}</strong>
+                    <span>${escapeHtml(record.createdAt)} · ${escapeHtml(record.model)}</span>
+                </div>
+                <span class="accordion-caret">${record.expanded ? "收起 ▲" : "展开 ▼"}</span>
+            </button>
+            <div class="accordion-body">
+                <div class="chat-question">
+                    <strong>我的问题</strong>
+                    <p>${escapeHtml(record.question)}</p>
+                </div>
+                <div class="analysis-content">${renderMarkdown(record.answer)}</div>
+                <div class="analysis-toolbar">
+                    <button class="btn btn-danger btn-sm" data-delete-chat="${problemId}:${record.id}" type="button">删除这条对话</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function toggleChat(problemId, recordId) {
+    const record = findProblem(problemId)?.problem.chatRecords.find((item) => item.id === recordId);
+    if (!record) return;
+    record.expanded = !record.expanded;
+    saveState();
+    renderAll();
+}
+
+function deleteChat(problemId, recordId) {
+    const problem = findProblem(problemId)?.problem;
+    if (!problem) return;
+    problem.chatRecords = problem.chatRecords.filter((item) => item.id !== recordId);
+    saveState();
+    renderAll();
+}
+
 function normaliseBaseUrl(baseUrl) {
     const trimmed = (baseUrl || "").trim().replace(/\/+$/, "");
     if (!trimmed) return "";
@@ -682,6 +752,151 @@ function buildPrompt(category, problem) {
         problem.code || "（用户还没有填写代码）",
         "```"
     ].join("\n");
+}
+
+function buildQuestionPrompt(category, problem, question) {
+    return [
+        "请作为算法竞赛导师，回答我针对当前洛谷题目的问题。",
+        "",
+        `分类：${category.title}`,
+        `题目名称：${problem.title}`,
+        `题目链接：${problem.link || "未提供"}`,
+        `题目描述：${problem.description || "未提供额外描述"}`,
+        "",
+        "当前代码：",
+        "```",
+        problem.code || "（用户还没有填写代码）",
+        "```",
+        "",
+        "我的问题：",
+        question,
+        "",
+        "回答要求：",
+        "1. 优先解释思路，不要一上来直接给完整代码。",
+        "2. 如果问题涉及代码错误，请指出最可能出错的位置和原因。",
+        "3. 如果题目上下文不足，请明确说明你做了哪些假设。"
+    ].join("\n");
+}
+
+async function requestAiText(systemPrompt, userPrompt) {
+    if (!state.settings.apiKey.trim()) {
+        throw new Error("请先在设置里填写 API Key。");
+    }
+
+    const provider = state.settings.aiProvider || "openai";
+    const endpoint = provider === "anthropic"
+        ? normaliseAnthropicUrl(state.settings.aiBaseUrl)
+        : normaliseBaseUrl(state.settings.aiBaseUrl);
+    if (!endpoint) {
+        throw new Error("请先在设置里填写 Base URL。");
+    }
+
+    const response = await fetch(endpoint, provider === "anthropic"
+        ? {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-api-key": state.settings.apiKey.trim(),
+                "anthropic-version": "2023-06-01"
+            },
+            body: JSON.stringify({
+                model: state.settings.aiModel.trim() || "claude-3-5-sonnet-latest",
+                max_tokens: 1800,
+                temperature: 0.3,
+                system: systemPrompt,
+                messages: [
+                    {
+                        role: "user",
+                        content: userPrompt
+                    }
+                ]
+            })
+        }
+        : {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${state.settings.apiKey.trim()}`
+            },
+            body: JSON.stringify({
+                model: state.settings.aiModel.trim() || "gpt-4o-mini",
+                temperature: 0.3,
+                messages: [
+                    {
+                        role: "system",
+                        content: systemPrompt
+                    },
+                    {
+                        role: "user",
+                        content: userPrompt
+                    }
+                ]
+            })
+        });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const message = payload.error?.message || payload.message || `请求失败（${response.status}）`;
+        throw new Error(message);
+    }
+
+    const content = provider === "anthropic"
+        ? (payload.content || []).filter((item) => item.type === "text").map((item) => item.text).join("\n\n")
+        : payload.choices?.[0]?.message?.content;
+    if (!content) {
+        throw new Error("API 返回为空，未拿到回答内容。");
+    }
+
+    return {
+        content,
+        model: state.settings.aiModel.trim() || (provider === "anthropic" ? "claude-3-5-sonnet-latest" : "gpt-4o-mini")
+    };
+}
+
+async function askProblemAi(problemId, question) {
+    const match = findProblem(problemId);
+    if (!match) return;
+    if (!question.trim()) {
+        alert("请先写下你想问 AI 的问题。");
+        return;
+    }
+
+    uiState.loadingChatProblemId = problemId;
+    renderPlanTab();
+    syncTabState();
+
+    try {
+        const systemPrompt = "你是一位耐心、严谨的算法竞赛导师。请围绕用户给出的题目、代码和问题进行讲解，重视思路、边界与调试方法。";
+        const userPrompt = buildQuestionPrompt(match.category, match.problem, question.trim());
+        const result = await requestAiText(systemPrompt, userPrompt);
+
+        if (!Array.isArray(match.problem.chatRecords)) {
+            match.problem.chatRecords = [];
+        }
+        match.problem.chatRecords.push({
+            id: `chat-${Date.now()}`,
+            createdAt: formatNow(),
+            model: result.model,
+            question: question.trim(),
+            answer: result.content,
+            expanded: true
+        });
+        match.problem.chatRecords.forEach((record, index) => {
+            if (index !== match.problem.chatRecords.length - 1) record.expanded = false;
+        });
+
+        saveState();
+        renderAll();
+    } catch (error) {
+        alert(`AI 回答失败：${error.message}`);
+        if (/API Key|Base URL/.test(error.message)) {
+            openSettings();
+        }
+    } finally {
+        uiState.loadingChatProblemId = null;
+        renderPlanTab();
+        syncTabState();
+    }
 }
 
 async function diagnoseProblem(problemId) {
@@ -933,6 +1148,14 @@ function setupEvents() {
             return;
         }
 
+        const askButton = target.closest("[data-ask-problem]");
+        if (askButton) {
+            const problemId = askButton.dataset.askProblem;
+            const input = document.querySelector(`[data-ai-question="${problemId}"]`);
+            askProblemAi(problemId, input ? input.value : "");
+            return;
+        }
+
         const wrongButton = target.closest("[data-toggle-wrong]");
         if (wrongButton) {
             const match = findProblem(wrongButton.dataset.toggleWrong);
@@ -974,6 +1197,20 @@ function setupEvents() {
         if (deleteAnalysisButton) {
             const [problemId, recordId] = deleteAnalysisButton.dataset.deleteAnalysis.split(":");
             deleteAnalysis(problemId, recordId);
+            return;
+        }
+
+        const toggleChatButton = target.closest("[data-toggle-chat]");
+        if (toggleChatButton) {
+            const [problemId, recordId] = toggleChatButton.dataset.toggleChat.split(":");
+            toggleChat(problemId, recordId);
+            return;
+        }
+
+        const deleteChatButton = target.closest("[data-delete-chat]");
+        if (deleteChatButton) {
+            const [problemId, recordId] = deleteChatButton.dataset.deleteChat.split(":");
+            deleteChat(problemId, recordId);
             return;
         }
 
