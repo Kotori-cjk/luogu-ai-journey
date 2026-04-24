@@ -944,6 +944,24 @@ function buildQuestionPrompt(category, problem, question) {
     ].join("\n");
 }
 
+function describeAiError(error) {
+    const message = error?.message || "未知错误";
+    if (error?.status === 502 || /\b502\b|bad response status code 502/i.test(message)) {
+        return [
+            "模型服务暂时不可用或中转接口响应异常。",
+            "可以先等几十秒后重试；如果连续失败，去设置里换一个模型或检查 Base URL。",
+            `原始信息：${message}`
+        ].join("\n");
+    }
+    if (error?.status === 401 || /unauthorized|invalid api key|401/i.test(message)) {
+        return `API Key 可能无效或已过期，请在设置里重新填写。\n原始信息：${message}`;
+    }
+    if (error?.status === 429 || /rate limit|quota|429/i.test(message)) {
+        return `请求频率或额度可能超限，可以稍后再试，或切换到另一个可用模型。\n原始信息：${message}`;
+    }
+    return message;
+}
+
 async function requestAiText(systemPrompt, userPrompt) {
     if (!state.settings.apiKey.trim()) {
         throw new Error("请先在设置里填写 API Key。");
@@ -1003,7 +1021,9 @@ async function requestAiText(systemPrompt, userPrompt) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
         const message = payload.error?.message || payload.message || `请求失败（${response.status}）`;
-        throw new Error(message);
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
     }
 
     const content = provider === "anthropic"
@@ -1054,7 +1074,7 @@ async function askProblemAi(problemId, question) {
         saveState();
         renderAll();
     } catch (error) {
-        alert(`AI 回答失败：${error.message}`);
+        alert(`AI 回答失败：${describeAiError(error)}`);
         if (/API Key|Base URL/.test(error.message)) {
             openSettings();
         }
@@ -1143,7 +1163,9 @@ async function diagnoseProblem(problemId) {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
             const message = payload.error?.message || payload.message || `请求失败（${response.status}）`;
-            throw new Error(message);
+            const error = new Error(message);
+            error.status = response.status;
+            throw error;
         }
 
         const content = provider === "anthropic"
@@ -1167,7 +1189,7 @@ async function diagnoseProblem(problemId) {
         saveState();
         renderAll();
     } catch (error) {
-        alert(`AI 诊断失败：${error.message}`);
+        alert(`AI 诊断失败：${describeAiError(error)}`);
     } finally {
         uiState.loadingProblemId = null;
         renderPlanTab();
