@@ -736,6 +736,23 @@ a {
     grid-column: 1 / -1;
 }
 
+.html-upload-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.form-hint {
+    color: var(--text-light);
+    font-size: 12px;
+}
+
+.html-source-input {
+    min-height: 130px;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+}
+
 .problem-card,
 .method-card,
 .wrong-card {
@@ -830,6 +847,32 @@ a {
     white-space: pre-wrap;
 }
 
+.problem-source-details {
+    border-radius: var(--radius-xs);
+    background: rgba(255, 255, 255, 0.68);
+}
+
+.problem-source-details summary {
+    cursor: pointer;
+    color: var(--primary-dark);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.problem-html-preview {
+    max-height: 220px;
+    margin-top: 8px;
+    padding: 12px;
+    overflow: auto;
+    border-radius: var(--radius-xs);
+    background: #f7f2f7;
+    color: var(--text-light);
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
 .badge {
     display: inline-flex;
     align-items: center;
@@ -847,6 +890,11 @@ a {
 .badge-chat {
     background: #e9fbff;
     color: #16859a;
+}
+
+.badge-source {
+    background: #fff6db;
+    color: #b06a00;
 }
 
 .badge-wrong {

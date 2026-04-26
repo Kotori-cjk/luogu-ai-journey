@@ -165,6 +165,7 @@ function migrateState(parsed) {
                     title: problem.title || "未命名题目",
                     link: problem.link || "",
                     description: problem.description || "",
+                    html: problem.html || problem.htmlContent || problem.problemHtml || "",
                     code: problem.code || "",
                     wrongBook: Boolean(problem.wrongBook),
                     collapsed: Boolean(problem.collapsed),
@@ -409,11 +410,17 @@ function renderPlanTab() {
 
     const formCard = `
         <div class="inline-form-card problem-form-card ${uiState.problemFormVisible ? "" : "hidden"}" id="problem-form-card">
-            <h3 class="form-title">添加题目</h3>
+            <h3 class="form-title">添加题目 / 资料</h3>
             <div class="form-grid">
-                <input id="problem-title-input" type="text" placeholder="题目名称，例如 P1177 模板排序">
-                <input id="problem-link-input" type="text" placeholder="洛谷链接，例如 https://www.luogu.com.cn/problem/P1177">
-                <textarea id="problem-desc-input" class="full-width" rows="4" placeholder="题目描述、重点要求，或者你想记下来的做题提醒"></textarea>
+                <input id="problem-title-input" type="text" placeholder="题目名称，例如 P1177 模板排序 / 期末力学题 03">
+                <input id="problem-link-input" type="text" placeholder="题目链接，可填洛谷、OJ、课程网页或任意参考页面">
+                <textarea id="problem-desc-input" class="full-width" rows="5" placeholder="题干描述、输入输出、样例、你的理解，或者想让 AI 特别关注的点"></textarea>
+                <div class="html-upload-row full-width">
+                    <label class="btn btn-secondary btn-sm" for="problem-html-file">上传 HTML / TXT</label>
+                    <input id="problem-html-file" type="file" accept=".html,.htm,.txt,text/html,text/plain" hidden>
+                    <span class="form-hint">也可以直接把题目网页源代码粘贴到下面，AI 会作为题目资料读取。</span>
+                </div>
+                <textarea id="problem-html-input" class="full-width html-source-input" rows="6" placeholder="题目所在网页的 HTML / 复制下来的网页正文（可选）"></textarea>
             </div>
             <div class="inline-form-actions">
                 <button id="save-problem-btn" class="btn btn-primary" type="button">保存题目</button>
@@ -480,6 +487,8 @@ function renderProblemCard(problem, category) {
     const analysisLabel = latestRecord
         ? `最近分析：${escapeHtml(latestRecord.createdAt)}`
         : "还没有分析记录";
+    const hasSourceDetail = Boolean(problem.description || problem.html);
+    const htmlLength = (problem.html || "").trim().length;
 
     return `
         <article class="problem-card ${problem.wrongBook ? "is-wrong" : ""} ${problem.collapsed ? "is-collapsed" : ""}" data-problem-id="${problem.id}" id="problem-${problem.id}">
@@ -487,12 +496,19 @@ function renderProblemCard(problem, category) {
                 <div class="problem-info">
                     <div class="problem-title-row">
                         <span class="problem-title">${escapeHtml(problem.title)}</span>
-                        ${problem.link ? `<a class="problem-link" href="${escapeHtml(problem.link)}" target="_blank" rel="noreferrer">打开题目</a>` : ""}
+                        ${problem.link ? `<a class="problem-link" href="${escapeHtml(problem.link)}" target="_blank" rel="noreferrer">打开资料</a>` : ""}
                         <span class="badge badge-ai">${problem.analysisRecords.length} 条分析</span>
                         <span class="badge badge-chat">${(problem.chatRecords || []).length} 条问答</span>
+                        ${htmlLength ? `<span class="badge badge-source">HTML ${Math.round(htmlLength / 1024) || 1}KB</span>` : ""}
                         ${problem.wrongBook ? '<span class="badge badge-wrong">已加入错题本</span>' : ""}
                     </div>
-                    ${problem.description ? `<div class="problem-desc">${escapeHtml(problem.description)}</div>` : ""}
+                    ${hasSourceDetail ? `
+                        <details class="problem-source-details">
+                            <summary>题目资料 ${problem.description ? "题干" : ""}${problem.description && problem.html ? " + " : ""}${problem.html ? "HTML" : ""}</summary>
+                            ${problem.description ? `<div class="problem-desc">${escapeHtml(problem.description)}</div>` : ""}
+                            ${problem.html ? `<pre class="problem-html-preview">${escapeHtml(problem.html.slice(0, 4000))}${problem.html.length > 4000 ? "\n...（HTML 较长，已折叠预览；AI 会读取保存的完整内容）" : ""}</pre>` : ""}
+                        </details>
+                    ` : ""}
                 </div>
                 <div class="problem-tools">
                     <button class="btn btn-ghost btn-sm" data-toggle-problem-fold="${problem.id}" type="button">${problem.collapsed ? "展开" : "折叠"}</button>
@@ -503,15 +519,15 @@ function renderProblemCard(problem, category) {
 
             <div class="problem-fold-body">
             <div class="problem-code-wrap">
-                <label class="field-caption" for="code-${problem.id}">代码输入区</label>
-                <textarea id="code-${problem.id}" class="problem-code" data-problem-code="${problem.id}" placeholder="把你的 C++ / Python / Java 代码粘贴到这里，随后点击 AI 诊断。">${escapeHtml(problem.code || "")}</textarea>
+                <label class="field-caption" for="code-${problem.id}">代码 / 草稿输入区</label>
+                <textarea id="code-${problem.id}" class="problem-code" data-problem-code="${problem.id}" placeholder="把你的 C++ / Python / Java 代码、伪代码、证明草稿或解题想法粘贴到这里；也可以留空，只向 AI 提问。">${escapeHtml(problem.code || "")}</textarea>
             </div>
 
             <div class="problem-action-row">
                 <span class="problem-meta">${analysisLabel}</span>
                 <div class="problem-primary-actions">
                     <button class="btn diagnose-btn ${uiState.loadingProblemId === problem.id ? "is-loading" : ""}" data-diagnose-problem="${problem.id}" type="button">
-                        ${uiState.loadingProblemId === problem.id ? "分析中..." : "🔮 AI 诊断"}
+                        ${uiState.loadingProblemId === problem.id ? "分析中..." : "🔮 AI 分析"}
                     </button>
                     <button class="btn btn-secondary" data-toggle-wrong="${problem.id}" type="button">
                         ${problem.wrongBook ? "移出错题本" : "加入错题本"}
@@ -521,9 +537,9 @@ function renderProblemCard(problem, category) {
 
             <div class="ai-question-box">
                 <label class="field-caption" for="question-${problem.id}">直接向 AI 提问</label>
-                <textarea id="question-${problem.id}" class="ai-question-input" data-ai-question="${problem.id}" placeholder="例如：为什么这里要用二分？我的第 35 行边界有没有问题？请只给提示不要直接给完整代码。"></textarea>
+                <textarea id="question-${problem.id}" class="ai-question-input" data-ai-question="${problem.id}" placeholder="例如：这道题怎么建模？这段代码哪里错了？请根据我上传的题干/HTML/代码给提示，不要直接给完整答案。"></textarea>
                 <div class="ai-question-actions">
-                    <span class="problem-meta">会自动带上当前题目、描述和代码作为上下文。</span>
+                    <span class="problem-meta">会自动带上当前题目、链接、题干、HTML 和代码作为上下文。</span>
                     <button class="btn btn-primary ${uiState.loadingChatProblemId === problem.id ? "is-loading" : ""}" data-ask-problem="${problem.id}" type="button">
                         ${uiState.loadingChatProblemId === problem.id ? "回答中..." : "向 AI 提问"}
                     </button>
@@ -752,7 +768,7 @@ function deleteCurrentCategory() {
     renderAll();
 }
 
-function addProblemToCurrentCategory(title, link, description) {
+function addProblemToCurrentCategory(title, link, description, html = "") {
     const category = getCurrentCategory();
     if (!category) return;
 
@@ -761,6 +777,7 @@ function addProblemToCurrentCategory(title, link, description) {
         title: title.trim(),
         link: link.trim(),
         description: description.trim(),
+        html: html.trim(),
         code: "",
         wrongBook: false,
         collapsed: false,
@@ -897,42 +914,53 @@ function normaliseAnthropicUrl(baseUrl) {
     return `${trimmed}/v1/messages`;
 }
 
+function trimForPrompt(value, maxLength, label) {
+    const text = (value || "").trim();
+    if (!text || text.length <= maxLength) return text;
+    return `${text.slice(0, maxLength)}\n\n[${label} 内容较长，已截断前 ${maxLength} 字符。请基于可见内容分析；如信息不足请说明。]`;
+}
+
+function buildProblemContext(category, problem) {
+    return [
+        `分类：${category.title}`,
+        `题目/资料名称：${problem.title}`,
+        `题目/资料链接：${problem.link || "未提供"}`,
+        "",
+        "题干描述 / 用户补充：",
+        trimForPrompt(problem.description, 12000, "题干描述") || "未提供",
+        "",
+        "题目网页 HTML / 网页正文：",
+        trimForPrompt(problem.html, 30000, "网页 HTML") || "未提供",
+        "",
+        "用户代码 / 草稿 / 当前思路：",
+        "```",
+        trimForPrompt(problem.code, 24000, "代码") || "（用户还没有填写代码或草稿）",
+        "```"
+    ].join("\n");
+}
+
 function buildPrompt(category, problem) {
     return [
-        "请作为算法竞赛导师，帮助我分析这道洛谷题。",
+        "请作为耐心、严谨的题目讲解与代码诊断导师，帮助我分析下面这份题目资料。",
+        "资料可能来自洛谷，也可能是我手写的题干、课程题目、网页 HTML 或其他 OJ 页面。",
         "",
-        `分类：${category.title}`,
-        `题目名称：${problem.title}`,
-        `题目链接：${problem.link || "未提供"}`,
-        `题目描述：${problem.description || "未提供额外描述"}`,
+        buildProblemContext(category, problem),
         "",
         "请按以下结构输出：",
-        "1. 题目涉及的核心算法与思想",
-        "2. 读题时应该抓住的关键词",
-        "3. 这份代码可能存在的错误、漏洞或边界问题",
-        "4. 可以优化的地方",
-        "5. 给我一份更稳妥的修正思路",
-        "",
-        "下面是我的代码：",
-        "```",
-        problem.code || "（用户还没有填写代码）",
-        "```"
+        "1. 先判断题目资料是否完整；如果 HTML 中有噪音，请提取真正题意。",
+        "2. 题目涉及的核心算法、数学思想或建模方法。",
+        "3. 读题时应该抓住的关键词、约束和边界条件。",
+        "4. 如果我提供了代码/草稿，请指出可能的错误、漏洞、边界问题和可优化之处。",
+        "5. 给我一份更稳妥的修正思路或解题路线，优先讲思考过程，不要无脑直接贴完整答案。"
     ].join("\n");
 }
 
 function buildQuestionPrompt(category, problem, question) {
     return [
-        "请作为算法竞赛导师，回答我针对当前洛谷题目的问题。",
+        "请作为题目讲解与代码诊断导师，回答我针对当前资料提出的问题。",
+        "资料可能来自洛谷，也可能是我手写的题干、课程题目、网页 HTML 或其他 OJ 页面。",
         "",
-        `分类：${category.title}`,
-        `题目名称：${problem.title}`,
-        `题目链接：${problem.link || "未提供"}`,
-        `题目描述：${problem.description || "未提供额外描述"}`,
-        "",
-        "当前代码：",
-        "```",
-        problem.code || "（用户还没有填写代码）",
-        "```",
+        buildProblemContext(category, problem),
         "",
         "我的问题：",
         question,
@@ -1090,8 +1118,8 @@ async function diagnoseProblem(problemId) {
     if (!match) return;
 
     const { category, problem } = match;
-    if (!problem.code.trim()) {
-        alert("先粘贴代码，再进行 AI 诊断。");
+    if (![problem.link, problem.description, problem.html, problem.code].some((item) => (item || "").trim())) {
+        alert("请先填写洛谷链接、题干描述、网页 HTML 或代码中的至少一项。");
         return;
     }
     if (!state.settings.apiKey.trim()) {
@@ -1301,6 +1329,7 @@ function setupEvents() {
             const title = document.getElementById("problem-title-input").value.trim();
             const link = document.getElementById("problem-link-input").value.trim();
             const description = document.getElementById("problem-desc-input").value.trim();
+            const html = document.getElementById("problem-html-input").value.trim();
             if (!title) {
                 alert("请先填写题目名称。");
                 return;
@@ -1308,9 +1337,9 @@ function setupEvents() {
 
             const editId = button.dataset.editProblemId;
             if (editId) {
-                updateProblem(editId, { title, link, description });
+                updateProblem(editId, { title, link, description, html });
             } else {
-                addProblemToCurrentCategory(title, link, description);
+                addProblemToCurrentCategory(title, link, description, html);
             }
             return;
         }
@@ -1389,6 +1418,7 @@ function setupEvents() {
             document.getElementById("problem-title-input").value = match.problem.title;
             document.getElementById("problem-link-input").value = match.problem.link;
             document.getElementById("problem-desc-input").value = match.problem.description;
+            document.getElementById("problem-html-input").value = match.problem.html || "";
             document.getElementById("save-problem-btn").dataset.editProblemId = match.problem.id;
             return;
         }
@@ -1455,6 +1485,20 @@ function setupEvents() {
             renderAll();
             const article = document.querySelector(`[data-problem-id="${match.problem.id}"]`);
             if (article) article.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    });
+
+    document.getElementById("main-content").addEventListener("change", async (event) => {
+        if (event.target.id !== "problem-html-file") return;
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+        const input = document.getElementById("problem-html-input");
+        if (!input) return;
+        try {
+            input.value = await file.text();
+        } catch (error) {
+            alert(`读取文件失败：${error.message || error}`);
         }
     });
 
