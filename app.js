@@ -187,6 +187,16 @@ function migrateState(parsed) {
                             answer: record.answer || "",
                             expanded: Boolean(record.expanded)
                         }))
+                        : [],
+                    insightRecords: Array.isArray(problem.insightRecords)
+                        ? problem.insightRecords.map((record, recordIndex) => ({
+                            id: record.id || `insight-${problemIndex}-${recordIndex}`,
+                            createdAt: record.createdAt || formatNow(),
+                            updatedAt: record.updatedAt || "",
+                            title: record.title || `收获 ${recordIndex + 1}`,
+                            content: record.content || "",
+                            expanded: Boolean(record.expanded)
+                        }))
                         : []
                 }))
                 : []
@@ -499,6 +509,7 @@ function renderProblemCard(problem, category) {
                         ${problem.link ? `<a class="problem-link" href="${escapeHtml(problem.link)}" target="_blank" rel="noreferrer">打开资料</a>` : ""}
                         <span class="badge badge-ai">${problem.analysisRecords.length} 条分析</span>
                         <span class="badge badge-chat">${(problem.chatRecords || []).length} 条问答</span>
+                        <span class="badge badge-insight">${(problem.insightRecords || []).length} 条收获</span>
                         ${htmlLength ? `<span class="badge badge-source">HTML ${Math.round(htmlLength / 1024) || 1}KB</span>` : ""}
                         ${problem.wrongBook ? '<span class="badge badge-wrong">已加入错题本</span>' : ""}
                     </div>
@@ -543,6 +554,31 @@ function renderProblemCard(problem, category) {
                     <button class="btn btn-primary ${uiState.loadingChatProblemId === problem.id ? "is-loading" : ""}" data-ask-problem="${problem.id}" type="button">
                         ${uiState.loadingChatProblemId === problem.id ? "回答中..." : "向 AI 提问"}
                     </button>
+                </div>
+            </div>
+
+            <div class="insight-box">
+                <div class="insight-box-head">
+                    <div>
+                        <strong>我的收获</strong>
+                        <p>把这道题真正学到的东西分条沉淀下来，每条都可以折叠、编辑和继续补充。</p>
+                    </div>
+                </div>
+                <div class="insight-editor">
+                    <input id="insight-title-${problem.id}" data-insight-title="${problem.id}" type="text" placeholder="收获标题，例如：状态设计要先想清楚含义">
+                    <textarea id="insight-content-${problem.id}" data-insight-content="${problem.id}" placeholder="写下你的收获、易错点、反思、模板提醒或下次刷到类似题时要注意的地方。"></textarea>
+                    <div class="insight-actions">
+                        <span class="problem-meta" data-insight-editing-label="${problem.id}">新增一条收获记录。</span>
+                        <div class="problem-primary-actions">
+                            <button class="btn btn-primary btn-sm" data-save-insight="${problem.id}" type="button">保存收获</button>
+                            <button class="btn btn-secondary btn-sm hidden" data-cancel-insight-edit="${problem.id}" type="button">取消编辑</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="insight-history accordion-list">
+                    ${(problem.insightRecords || []).length
+                        ? problem.insightRecords.map((record, index) => renderInsightRecord(problem.id, record, index)).join("")
+                        : '<div class="analysis-empty">还没有收获记录。可以把“这题以后怎么一眼认出来”写在这里。</div>'}
                 </div>
             </div>
 
@@ -782,7 +818,8 @@ function addProblemToCurrentCategory(title, link, description, html = "") {
         wrongBook: false,
         collapsed: false,
         analysisRecords: [],
-        chatRecords: []
+        chatRecords: [],
+        insightRecords: []
     });
 
     saveState();
@@ -896,6 +933,123 @@ function deleteChat(problemId, recordId) {
     problem.chatRecords = problem.chatRecords.filter((item) => item.id !== recordId);
     saveState();
     renderAll();
+}
+
+function renderInsightRecord(problemId, record, index) {
+    return `
+        <div class="accordion-item insight-item ${record.expanded ? "open" : ""}" id="insight-${record.id}">
+            <button class="accordion-header" data-toggle-insight="${problemId}:${record.id}" type="button">
+                <div class="accordion-title">
+                    <strong>${index + 1}. ${escapeHtml(record.title || "未命名收获")}</strong>
+                    <span>${escapeHtml(record.createdAt)}${record.updatedAt ? ` · 更新于 ${escapeHtml(record.updatedAt)}` : ""}</span>
+                </div>
+                <span class="accordion-caret">${record.expanded ? "收起 ▲" : "展开 ▼"}</span>
+            </button>
+            <div class="accordion-body">
+                <div class="analysis-content">${renderMarkdown(record.content)}</div>
+                <div class="analysis-toolbar">
+                    <button class="btn btn-secondary btn-sm" data-edit-insight="${problemId}:${record.id}" type="button">编辑这条收获</button>
+                    <button class="btn btn-danger btn-sm" data-delete-insight="${problemId}:${record.id}" type="button">删除这条收获</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function saveInsight(problemId) {
+    const problem = findProblem(problemId)?.problem;
+    if (!problem) return;
+    const titleInput = document.querySelector(`[data-insight-title="${problemId}"]`);
+    const contentInput = document.querySelector(`[data-insight-content="${problemId}"]`);
+    const title = titleInput?.value.trim() || "";
+    const content = contentInput?.value.trim() || "";
+    const editingId = titleInput?.dataset.editingInsightId || "";
+
+    if (!title) {
+        alert("请先给这条收获写一个标题。");
+        return;
+    }
+    if (!content) {
+        alert("请先写下这条收获的内容。");
+        return;
+    }
+    if (!Array.isArray(problem.insightRecords)) {
+        problem.insightRecords = [];
+    }
+
+    if (editingId) {
+        const record = problem.insightRecords.find((item) => item.id === editingId);
+        if (record) {
+            record.title = title;
+            record.content = content;
+            record.updatedAt = formatNow();
+            record.expanded = true;
+        }
+    } else {
+        problem.insightRecords.unshift({
+            id: `insight-${Date.now()}`,
+            createdAt: formatNow(),
+            updatedAt: "",
+            title,
+            content,
+            expanded: true
+        });
+    }
+
+    problem.insightRecords.forEach((record, index) => {
+        if (editingId ? record.id !== editingId : index !== 0) record.expanded = false;
+    });
+    saveState();
+    renderAll();
+}
+
+function toggleInsight(problemId, recordId) {
+    const record = findProblem(problemId)?.problem.insightRecords.find((item) => item.id === recordId);
+    if (!record) return;
+    record.expanded = !record.expanded;
+    saveState();
+    renderAll();
+}
+
+function deleteInsight(problemId, recordId) {
+    const problem = findProblem(problemId)?.problem;
+    if (!problem) return;
+    problem.insightRecords = (problem.insightRecords || []).filter((item) => item.id !== recordId);
+    saveState();
+    renderAll();
+}
+
+function editInsight(problemId, recordId) {
+    const problem = findProblem(problemId)?.problem;
+    const record = problem?.insightRecords?.find((item) => item.id === recordId);
+    if (!record) return;
+    const titleInput = document.querySelector(`[data-insight-title="${problemId}"]`);
+    const contentInput = document.querySelector(`[data-insight-content="${problemId}"]`);
+    const label = document.querySelector(`[data-insight-editing-label="${problemId}"]`);
+    const cancelButton = document.querySelector(`[data-cancel-insight-edit="${problemId}"]`);
+    if (!titleInput || !contentInput) return;
+
+    titleInput.value = record.title || "";
+    contentInput.value = record.content || "";
+    titleInput.dataset.editingInsightId = record.id;
+    if (label) label.textContent = `正在编辑：${record.title || "未命名收获"}`;
+    if (cancelButton) cancelButton.classList.remove("hidden");
+    titleInput.scrollIntoView({ behavior: "smooth", block: "center" });
+    titleInput.focus();
+}
+
+function cancelInsightEdit(problemId) {
+    const titleInput = document.querySelector(`[data-insight-title="${problemId}"]`);
+    const contentInput = document.querySelector(`[data-insight-content="${problemId}"]`);
+    const label = document.querySelector(`[data-insight-editing-label="${problemId}"]`);
+    const cancelButton = document.querySelector(`[data-cancel-insight-edit="${problemId}"]`);
+    if (titleInput) {
+        titleInput.value = "";
+        delete titleInput.dataset.editingInsightId;
+    }
+    if (contentInput) contentInput.value = "";
+    if (label) label.textContent = "新增一条收获记录。";
+    if (cancelButton) cancelButton.classList.add("hidden");
 }
 
 function normaliseBaseUrl(baseUrl) {
@@ -1454,6 +1608,39 @@ function setupEvents() {
         if (deleteChatButton) {
             const [problemId, recordId] = deleteChatButton.dataset.deleteChat.split(":");
             deleteChat(problemId, recordId);
+            return;
+        }
+
+        const saveInsightButton = target.closest("[data-save-insight]");
+        if (saveInsightButton) {
+            saveInsight(saveInsightButton.dataset.saveInsight);
+            return;
+        }
+
+        const cancelInsightButton = target.closest("[data-cancel-insight-edit]");
+        if (cancelInsightButton) {
+            cancelInsightEdit(cancelInsightButton.dataset.cancelInsightEdit);
+            return;
+        }
+
+        const toggleInsightButton = target.closest("[data-toggle-insight]");
+        if (toggleInsightButton) {
+            const [problemId, recordId] = toggleInsightButton.dataset.toggleInsight.split(":");
+            toggleInsight(problemId, recordId);
+            return;
+        }
+
+        const editInsightButton = target.closest("[data-edit-insight]");
+        if (editInsightButton) {
+            const [problemId, recordId] = editInsightButton.dataset.editInsight.split(":");
+            editInsight(problemId, recordId);
+            return;
+        }
+
+        const deleteInsightButton = target.closest("[data-delete-insight]");
+        if (deleteInsightButton) {
+            const [problemId, recordId] = deleteInsightButton.dataset.deleteInsight.split(":");
+            deleteInsight(problemId, recordId);
             return;
         }
 

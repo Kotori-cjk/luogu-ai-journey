@@ -428,6 +428,8 @@ a {
 .settings-group textarea:focus,
 .problem-code:focus,
 .ai-question-input:focus,
+.insight-editor input:focus,
+.insight-editor textarea:focus,
 .method-inputs textarea:focus,
 .method-inputs input:focus {
     outline: none;
@@ -892,6 +894,11 @@ a {
     color: #16859a;
 }
 
+.badge-insight {
+    background: #fff3df;
+    color: var(--orange);
+}
+
 .badge-source {
     background: #fff6db;
     color: #b06a00;
@@ -919,6 +926,68 @@ a {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(233, 251, 255, 0.72));
+}
+
+.insight-box {
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid rgba(255, 184, 108, 0.42);
+    border-radius: var(--radius-sm);
+    background: linear-gradient(135deg, rgba(255, 250, 238, 0.92), rgba(255, 246, 251, 0.82));
+}
+
+.insight-box-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.insight-box-head strong {
+    color: var(--orange);
+    font-family: var(--font-cute);
+    font-size: 16px;
+}
+
+.insight-box-head p {
+    margin-top: 4px;
+    color: var(--text-light);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.insight-editor {
+    display: grid;
+    gap: 10px;
+}
+
+.insight-editor input,
+.insight-editor textarea {
+    width: 100%;
+    border: 2px solid var(--border);
+    border-radius: var(--radius-xs);
+    background: #fff;
+    color: var(--text);
+    padding: 10px 12px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.insight-editor textarea {
+    min-height: 110px;
+    resize: vertical;
+    line-height: 1.7;
+}
+
+.insight-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.insight-history {
+    margin-top: 14px;
 }
 
 .field-caption {
